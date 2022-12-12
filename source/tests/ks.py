@@ -1,21 +1,20 @@
 import numpy as np
 import numpy.typing as npt
+import scipy.stats as stats
 from typing import Tuple
+from icecream import ic
 
 
-# statystyka testowa
-def ks_stat(x: npt.NDArray[float],  k: int) -> float:
-    return 0
+def ks_test(x: npt.NDArray[float], alpha: float = 0.05) -> Tuple[float, float, bool]:
+    res = stats.kstest(x, stats.uniform.cdf)
+    return (res.pvalue, res.statistic, res.pvalue < alpha)
 
 
-# p-wartosc
-def ks_pval(n: int, t: float) -> float:
-    return 0
+if __name__ == "__main__":
+    alpha = 0.05
+    x = np.array([0.05, 0.02, 0.055, 0.99, 0.98])
 
-
-# wynik testu
-def ks_test(x: npt.NDArray[float], k: int, alpha: float = 0.05) -> Tuple[float, float, bool]:
-    n = x.shape[0]  # TODO
-    t = ks_stat(x, k)
-    p = ks_pval(n, t)
-    return (p, t, p < alpha)
+    tr = stats.kstest(x, stats.uniform.cdf)
+    ic(tr.statistic)
+    ic(tr.pvalue)
+    ic(tr.pvalue < alpha)
