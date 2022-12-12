@@ -3,7 +3,9 @@ import numpy.typing as npt
 import scipy.stats as stats
 from typing import Tuple
 from icecream import ic
-
+"""
+Test serii
+"""
 
 def chisq_stat(x: npt.NDArray[float],  k: int) -> float:
     Y = np.flip(np.bincount((x.reshape(-1,  1) < (np.arange(k) / k)[np.newaxis, :]).sum(axis=1), minlength=k))
