@@ -1,29 +1,37 @@
+from abstract_generator import AbstractGenerator
+from datetime import datetime
 import numpy as np
+import numpy.typing as npt
+from typing import Optional
 
 
-def ksa(K: list[int], m: int) -> list[int]:
-    L = len(K)
-    S = np.arange(m)
-    j = 0
-    for i in range(m):
-        j = (j + S[i] + K[i % L]) % m
-        S[i], S[j] = S[j], S[i]
-    return S
+class RivestCipher4Generator(AbstractGenerator):
+    def __init__(self, m: int = 2 ** 18, k_seq: Optional[npt.NDArray[int]] = None):
+        now = datetime.now()
+        super().__init__(m)
 
+        self.k_seq = k_seq if k_seq is not None else np.array(
+            [(now.microsecond // (i + 1)) % self.M for i in range(10)])
+        self.seed = self._ksa()
+        self.i, self.j = 0, 0
 
-def rc4_gen(S: list[int], length: int) -> list[int]:
-    i, j = 0, 0
-    res = []
-    m = len(S)
-    for _ in range(length):
-        i = (i + 1) % m
-        j = (j + S[i]) % m
-        S[i], S[j] = S[j], S[i]
-        res.append(S[(S[i] + S[j]) % m] / m)
-    return res
+    def _ksa(self) -> npt.NDArray[int]:
+        l = len(self.k_seq)
+        perm = np.arange(self.M)
+        j = 0
+        for i in range(self.M):
+            j = (j + perm[i] + self.k_seq[i % l]) % self.M
+            perm[i], perm[j] = perm[j], perm[i]
+        return perm
+
+    def send(self, ignored_arg: None = None):
+        self.i = (self.i + 1) % self.M
+        self.j = (self.j + self.seed[self.i]) % self.M
+        self.seed[self.i], self.seed[self.j] = self.seed[self.j], self.seed[self.i]
+        value = self.seed[(self.seed[self.i] + self.seed[self.j]) % self.M]
+        return value
 
 
 if __name__ == "__main__":
-    S = ksa([2, 5, 19, 1], 1000)
-    print(rc4_gen(S, 100))
-
+    generator = RivestCipher4Generator()
+    print(generator.sample(10))

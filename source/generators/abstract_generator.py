@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import numpy.typing as npt
 import numpy as np
 
 
@@ -6,10 +7,10 @@ class AbstractGenerator(Generator):
     def __init__(self, m: int = 2 ** 18):
         self.M = m
 
-    def send(self, ignored_arg: None = None):
+    def send(self, ignored_arg: None = None) -> int:
         """
         Generate the next number and update needed parameters
-        :param value:
+        :param ignored_arg:
         :return: random integer
         """
         return_value = 0
@@ -18,7 +19,7 @@ class AbstractGenerator(Generator):
     def throw(self, typ=None, value=None, traceback=None):
         raise StopIteration
 
-    def sample(self, length: int = 1):
+    def sample(self, length: int = 1) -> npt.NDArray[int]:
         """
         Sample numbers from iterator
         :param length: length of sampled sequence

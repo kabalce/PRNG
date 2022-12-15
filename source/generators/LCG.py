@@ -2,6 +2,7 @@ from abstract_generator import AbstractGenerator
 from datetime import datetime
 from typing import Optional
 
+
 class LinearCongruentialGenerator(AbstractGenerator):
     def __init__(self, m: int = 2 ** 18, a: Optional[int] = None, c: Optional[int] = None, seed: Optional[int] = None):
         """
@@ -17,7 +18,7 @@ class LinearCongruentialGenerator(AbstractGenerator):
         self.c = c if c is not None else now.second % self.M
         self.seed = seed if a is not None else now.microsecond % self.M
 
-    def send(self, ignored_arg: None = None):
+    def send(self, ignored_arg: None = None) -> int:
         self.seed = (self.a * self.seed + self.c) % self.M
         return self.seed
 
