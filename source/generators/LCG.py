@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 class LinearCongruentialGenerator(AbstractGenerator):
-    def __init__(self, a: Optional[int] = None, c: Optional[int] = None, seed: Optional[int] = None, m: int = 2 ** 18):
+    def __init__(self, m: int = 2 ** 18, a: Optional[int] = None, c: Optional[int] = None, seed: Optional[int] = None):
         """
 
         :param m: modulus

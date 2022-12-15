@@ -6,7 +6,7 @@ class AbstractGenerator(Generator):
     def __init__(self, m: int = 2 ** 18):
         self.M = m
 
-    def send(self, value):
+    def send(self, ignored_arg: None = None):
         """
         Generate the next number and update needed parameters
         :param value:
