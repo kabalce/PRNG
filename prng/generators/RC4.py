@@ -1,4 +1,4 @@
-from abstract_generator import AbstractGenerator
+from prng.generators.abstract_generator import AbstractGenerator
 from datetime import datetime
 import numpy as np
 import numpy.typing as npt
