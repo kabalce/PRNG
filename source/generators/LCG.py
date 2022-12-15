@@ -1,15 +1,27 @@
-import numpy as np
-# from collections.abc import Generator
+from abstract_generator import AbstractGenerator
+from datetime import datetime
+from typing import Optional
 
-def lcg_gen(M: int, a: int, c: int, seed: int, length: int) -> list[float]:  # -> Generator[int, None, None]:
-    """LCG - linear congruential generator"""
-    res = []
-    s = seed
-    for _ in range(length):
-        s = (a * s + c) % M
-        res.append(s / M)
-    return res
+class LinearCongruentialGenerator(AbstractGenerator):
+    def __init__(self, a: Optional[int] = None, c: Optional[int] = None, seed: Optional[int] = None, m: int = 2 ** 18):
+        """
+
+        :param m: modulus
+        :param a: multiplier
+        :param c: summand
+        :param seed: initial value
+        """
+        now = datetime.now()
+        super().__init__(m)
+        self.a = a if a is not None else now.minute % self.M
+        self.c = c if c is not None else now.second % self.M
+        self.seed = seed if a is not None else now.microsecond % self.M
+
+    def send(self, ignored_arg: None = None):
+        self.seed = (self.a * self.seed + self.c) % self.M
+        return self.seed
 
 
-if __name__  == "__main__":
-    print(lcg_gen(10000, 17, 1, 48,  100))
+if __name__ == "__main__":
+    generator = LinearCongruentialGenerator()
+    print(generator.sample(10))
