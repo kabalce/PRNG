@@ -6,14 +6,17 @@ from abc import ABC
 from scipy.special import erfc
 from bitarray import bitarray
 
+# TODO: refactor birthday spacing test to be more efficient
+
 
 class Tester(ABC):
-    def __init__(self, data: npt.NDArray[int], m: Optional[int] = None):
+    def __init__(self, data: npt.NDArray[int], m: Optional[int] = None, no_folds: int = 100):
         self.M = data.max() if m is None else m
         self.integers = data
         self.uniform = None
         self.binaries = None
         self.n = self.integers.shape[0]
+        self.fold_index = [(self.n * i) // no_folds for i in range(no_folds + 1)]
 
     def _provide_uniform(self):
         if self.uniform is None:
@@ -27,9 +30,11 @@ class Tester(ABC):
                 ba += bitarray(b)
             self.binaries = ba
 
-    def _chi2_stat(self, k: int = 1000) -> float:
-        y = np.flip(np.bincount((self.uniform.reshape(-1, 1) < (np.arange(k) / k)[np.newaxis, :]).sum(axis=1), minlength=k))
-        stat = (np.square(y - self.n / k) / (self.n / k)).sum()
+    @staticmethod
+    def _chi2_stat(uniform: npt.NDArray[float], k: int = 1000) -> float:
+        n = uniform.shape[0]
+        y = np.flip(np.bincount((uniform.reshape(-1, 1) < (np.arange(k) / k)[np.newaxis, :]).sum(axis=1), minlength=k))
+        stat = (np.square(y - n / k) / (n / k)).sum()
         return stat
 
     @staticmethod
@@ -39,12 +44,20 @@ class Tester(ABC):
 
     def chi2_test(self, k: int = 1000, alpha: float = 0.05) -> Tuple[float, float, bool]:
         self._provide_uniform()
-        t = self._chi2_stat(k)
+        t = self._chi2_stat(self.uniform, k)
         p = self._chi2_pval(k, t)
         return p, t, p < alpha
 
-    def _bds_stat(self, k: int) -> float:
-        y = (self.integers.reshape(-1, 1) >= (np.arange(k))[np.newaxis, :]).sum(axis=1) - 1
+    def ch2_2nd_level_test(self, k: int = 1000, alpha: float = 0.05) -> Tuple[float, float, bool]:
+        self._provide_uniform()
+        p_values = np.array([self._chi2_pval(k, self._chi2_stat(self.uniform[self.fold_index[i]: self.fold_index[i + 1]], k)) for i in range(len(self.fold_index) - 1)])
+        t = self._chi2_stat(p_values)
+        p = self._chi2_pval(k, t)
+        return p, t, p < alpha
+
+    @staticmethod
+    def _bds_stat(integers: npt.NDArray[int], k: int) -> float:
+        y = (integers.reshape(-1, 1) >= (np.arange(k))[np.newaxis, :]).sum(axis=1) - 1
         ys = np.sort(y)
         s = ys[1:] - ys[:-1]
         k = np.bincount(s)
@@ -58,8 +71,23 @@ class Tester(ABC):
     def bds_test(self, alpha: float = 0.05) -> Tuple[float, float, bool]:
         k = np.ceil(self.n ** 2.4)
         l = self.n ** 3 / (4 * k)
-        t = self._bds_stat(k)
+        t = self._bds_stat(self.integers, k)
         p = self._bds_pval(l, t)
+        return p, t, p < alpha
+
+    def bds_2nd_level_test(self, k: int = 10, alpha: float = 0.05) -> Tuple[float, float, bool]:
+        k_loc = np.ceil((self.n / len(self.fold_index)) ** 2.4)
+        l = int(self.n ** 3 / (4 * k_loc))
+        poi_stats = np.array([self._bds_stat(self.integers[self.fold_index[i]: self.fold_index[i + 1]], k_loc) for i in range(len(self.fold_index) - 1)])
+
+        distr = stats.poisson(l)
+        quantiles = distr.ppf(np.arange(k) / k).astype(int)
+        prob_i = distr.cdf(quantiles)
+        prob_i = np.concatenate([np.array([1]), prob_i[:-1]]) - prob_i
+
+        y = np.flip(np.bincount(k - (poi_stats.reshape(-1, 1) < quantiles[np.newaxis, :]).sum(axis=1), minlength=k))
+        t = (np.square(y - prob_i) / prob_i).sum()
+        p = 1 - stats.chi2(k - 1).cdf(t)
         return p, t, p < alpha
 
     def ks_test(self, alpha: float = 0.05) -> Tuple[float, float, bool]:
@@ -67,25 +95,34 @@ class Tester(ABC):
         res = stats.kstest(self.uniform, stats.uniform().cdf)
         return res.pvalue, res.statistic, res.pvalue < alpha
 
-    def _runs_pre_test(self) -> bool:
-        pi = len(self.binaries.search(bitarray('1'))) / len(self.binaries)
-        tau = 2 / np.sqrt(len(self.binaries))
+    def ks_2nd_level_test(self, alpha: float = 0.05) -> Tuple[float, float, bool]:
+        self._provide_uniform()
+        p_values = np.array([stats.kstest(self.uniform[self.fold_index[i]: self.fold_index[i + 1]], stats.uniform().cdf).pvalue for i in range(len(self.fold_index) - 1)])
+        res = stats.kstest(p_values, stats.uniform().cdf)
+        return res.pvalue, res.statistic, res.pvalue < alpha
+
+    @staticmethod
+    def _runs_pre_test(binaries: bitarray) -> bool:
+        pi = len(binaries.search(bitarray('1'))) / len(binaries)
+        tau = 2 / np.sqrt(len(binaries))
         return pi >= tau, pi
 
-    def _runs_stat(self) -> float:
-        stat = len(self.binaries.search(bitarray('01'))) + len(self.binaries.search(bitarray('10'))) + 2
+    @staticmethod
+    def _runs_stat(binaries: bitarray) -> float:
+        stat = len(binaries.search(bitarray('01'))) + len(binaries.search(bitarray('10'))) + 2
         return stat
 
-    def _runs_pval(self, pi: float, t: float) -> float:
-        p = erfc(abs(t - 2 * self.n * pi * (1 - pi)) / (2 * np.sqrt(2 * self.n) * pi * (1 - pi)))
+    @staticmethod
+    def _runs_pval(n: int, pi: float, t: float) -> float:
+        p = erfc(abs(t - 2 * n * pi * (1 - pi)) / (2 * np.sqrt(2 * n) * pi * (1 - pi)))
         return p
 
     def runs_test(self, alpha: float = 0.05) -> Tuple[Optional[float], Optional[float], bool]:
         self._provide_binary()
-        res_pre, pi = self._runs_pre_test()
+        res_pre, pi = self._runs_pre_test(self.binaries)
         if res_pre:
-            t = self._runs_stat()
-            p = self._runs_pval(pi, t)
+            t = self._runs_stat(self.binaries)
+            p = self._runs_pval(self.n, pi, t)
             return p, t, p < alpha
         else:
             return None, None, False
@@ -93,9 +130,12 @@ class Tester(ABC):
 if __name__ == "__main__":
     from prng.generators.LCG import LinearCongruentialGenerator as LCG
     generator = LCG()
-    data = generator.sample(100)
+    data = generator.sample(100000)
     tester = Tester(data)
     print(tester.runs_test())
     print(tester.chi2_test())
-    print(tester.bds_test())
+    print(tester.ch2_2nd_level_test())
+    # print(tester.bds_test())
+    # print(tester.bds_2nd_level_test())
     print(tester.ks_test())
+    print(tester.ks_2nd_level_test())
