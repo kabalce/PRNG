@@ -6,8 +6,6 @@ from abc import ABC
 from scipy.special import erfc
 from bitarray import bitarray
 
-# TODO: refactor birthday spacing test to be more efficient
-
 
 class Tester(ABC):
     def __init__(self, data: npt.NDArray[int], m: Optional[int] = None, no_folds: int = 100):
@@ -57,7 +55,9 @@ class Tester(ABC):
 
     @staticmethod
     def _bds_stat(integers: npt.NDArray[int], k: int) -> float:
-        y = (integers.reshape(-1, 1) >= (np.arange(k))[np.newaxis, :]).sum(axis=1) - 1
+        # y = (integers.reshape(-1, 1) >= ).sum(axis=1) - 1
+        indexes = np.arange(k)
+        y = np.array([(i >= indexes).sum() - 1 for i in integers])
         ys = np.sort(y)
         s = ys[1:] - ys[:-1]
         k = np.bincount(s)
@@ -68,20 +68,18 @@ class Tester(ABC):
     def _bds_pval(l: float, t: float) -> float:
         return 1 - stats.poisson(l).cdf(t)
 
-    def bds_test(self, alpha: float = 0.05) -> Tuple[float, float, bool]:
-        k = np.ceil(self.n ** 2.4)
+    def bds_test(self, alpha: float = 0.05, k: int = 512) -> Tuple[float, float, bool]:
         l = self.n ** 3 / (4 * k)
         t = self._bds_stat(self.integers, k)
         p = self._bds_pval(l, t)
         return p, t, p < alpha
 
-    def bds_2nd_level_test(self, k: int = 10, alpha: float = 0.05) -> Tuple[float, float, bool]:
-        k_loc = np.ceil((self.n / len(self.fold_index)) ** 2.4)
+    def bds_2nd_level_test(self, k: int = 10, k_loc: int = 512, alpha: float = 0.05) -> Tuple[float, float, bool]:
         l = int(self.n ** 3 / (4 * k_loc))
         poi_stats = np.array([self._bds_stat(self.integers[self.fold_index[i]: self.fold_index[i + 1]], k_loc) for i in range(len(self.fold_index) - 1)])
 
         distr = stats.poisson(l)
-        quantiles = distr.ppf(np.arange(k) / k).astype(int)
+        quantiles = np.flip(distr.ppf(np.arange(k) / k).astype(int))
         prob_i = distr.cdf(quantiles)
         prob_i = np.concatenate([np.array([1]), prob_i[:-1]]) - prob_i
 
@@ -102,7 +100,7 @@ class Tester(ABC):
         return res.pvalue, res.statistic, res.pvalue < alpha
 
     @staticmethod
-    def _runs_pre_test(binaries: bitarray) -> bool:
+    def _runs_pre_test(binaries: bitarray) -> Tuple[bool, float]:
         pi = len(binaries.search(bitarray('1'))) / len(binaries)
         tau = 2 / np.sqrt(len(binaries))
         return pi >= tau, pi
@@ -126,16 +124,17 @@ class Tester(ABC):
             return p, t, p < alpha
         else:
             return None, None, False
-    
+
+
 if __name__ == "__main__":
     from prng.generators.LCG import LinearCongruentialGenerator as LCG
     generator = LCG()
-    data = generator.sample(100000)
+    data = generator.sample(2 ** 15)
     tester = Tester(data)
     print(tester.runs_test())
     print(tester.chi2_test())
     print(tester.ch2_2nd_level_test())
-    # print(tester.bds_test())
-    # print(tester.bds_2nd_level_test())
+    print(tester.bds_test())
+    print(tester.bds_2nd_level_test())
     print(tester.ks_test())
     print(tester.ks_2nd_level_test())
