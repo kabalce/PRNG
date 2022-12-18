@@ -4,7 +4,7 @@ from typing import Optional
 
 
 class BlumBlumShubGenerator(AbstractGenerator):
-    def __init__(self, m: int = 993319 * 23, seed: Optional[int] = None):
+    def __init__(self, m: int = 993319 * 23, seed: Optional[int] = None, number_of_bits: int = 9):
         """
 
         :param m: modulus
@@ -15,10 +15,11 @@ class BlumBlumShubGenerator(AbstractGenerator):
         now = datetime.now()
         super().__init__(m)
         self.seed = seed if seed is not None else now.microsecond % self.M
+        self.number_of_bits = number_of_bits
 
     def send(self, ignored_arg: None = None) -> int:
         self.seed = (self.seed ** 2) % self.M
-        return int(bin(self.seed)[-9:], 2)
+        return int(bin(self.seed)[(-1 * self.number_of_bits):], 2)
 
 
 if __name__ == "__main__":
