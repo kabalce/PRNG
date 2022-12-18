@@ -49,12 +49,12 @@ class Tester(ABC):
         p = self._chi2_pval(k, t)
         return p, t, p < alpha
 
-    def ch2_2nd_level_test(self, k: int = 1000, alpha: float = 0.05) -> Tuple[float, float, bool]:
+    def chi2_2nd_level_test(self, k: int = 1000, alpha: float = 0.05) -> Tuple[float, float, bool, npt.NDArray[float]]:
         self._provide_uniform()
         p_values = np.array([self._chi2_pval(k, self._chi2_stat(self.uniform[self.fold_index[i]: self.fold_index[i + 1]], k)) for i in range(self.no_folds)])
         t = self._chi2_stat(p_values)
         p = self._chi2_pval(k, t)
-        return p, t, p < alpha
+        return p, t, p < alpha, p_values
 
     @staticmethod
     def _bds_stat(integers: npt.NDArray[int], k: int) -> float:
@@ -77,7 +77,7 @@ class Tester(ABC):
         p = self._bds_pval(l, t)
         return p, t, p < alpha
 
-    def bds_2nd_level_test(self, k: int = 10, k_loc: int = 512, alpha: float = 0.05) -> Tuple[float, float, bool]:
+    def bds_2nd_level_test(self, k: int = 10, k_loc: int = 512, alpha: float = 0.05) -> Tuple[float, float, bool, npt.NDArray[int]]:
         l = int(self.n ** 3 / (4 * k_loc))
         poi_stats = np.array([self._bds_stat(self.integers[self.fold_index[i]: self.fold_index[i + 1]], k_loc) for i in range(self.no_folds)])
 
@@ -89,18 +89,18 @@ class Tester(ABC):
         y = np.flip(np.bincount(k - (poi_stats.reshape(-1, 1) < quantiles[np.newaxis, :]).sum(axis=1), minlength=k))
         t = (np.square(y - prob_i) / prob_i).sum()
         p = 1 - stats.chi2(k - 1).cdf(t)
-        return p, t, p < alpha
+        return p, t, p < alpha, poi_stats
 
     def ks_test(self, alpha: float = 0.05) -> Tuple[float, float, bool]:
         self._provide_uniform()
         res = stats.kstest(self.uniform, stats.uniform().cdf)
         return res.pvalue, res.statistic, res.pvalue < alpha
 
-    def ks_2nd_level_test(self, alpha: float = 0.05) -> Tuple[float, float, bool]:
+    def ks_2nd_level_test(self, alpha: float = 0.05) -> Tuple[float, float, bool, npt.NDArray[float]]:
         self._provide_uniform()
         p_values = np.array([stats.kstest(self.uniform[self.fold_index[i]: self.fold_index[i + 1]], stats.uniform().cdf).pvalue for i in range(self.no_folds)])
         res = stats.kstest(p_values, stats.uniform().cdf)
-        return res.pvalue, res.statistic, res.pvalue < alpha
+        return res.pvalue, res.statistic, res.pvalue < alpha, p_values
 
     @staticmethod
     def _runs_pre_test(binaries: npt.NDArray[bool]) -> Tuple[bool, float]:
@@ -123,27 +123,37 @@ class Tester(ABC):
         res_pre, pi = self._runs_pre_test(self.binaries)
         if res_pre:
             t = self._runs_stat(self.binaries)
-            p = self._runs_pval(self.n, pi, t)
+            p = self._runs_pval(self.binaries.shape[0], pi, t)
             return p, t, p < alpha
         else:
             return None, None, False
 
-    def runs_2nd_level_test(self, k: int = 10, alpha: float = 0.05) -> Tuple[Optional[float], Optional[float], bool]:
+    def runs_2nd_level_test(self, k: int = 10, alpha: float = 0.05) -> Tuple[Optional[float], Optional[float], bool, npt.NDArray[float]]:
         self._provide_binary()
         n = 512
         self.no_folds_bin = self.binaries.shape[0] // n
         folds_bin = [n * i for i in range(self.no_folds_bin + 1)]
 
-        p_values = np.array([self.runs_test(self.binaries[folds_bin[i]: folds_bin[i + 1]])[0] for i in range(self.no_folds_bin)])
+        def runs_test_static(binaries):
+            res_pre, pi = self._runs_pre_test(binaries)
+            if res_pre:
+                t = self._runs_stat(binaries)
+                p = self._runs_pval(binaries.shape[0], pi, t)
+                return p
+            else:
+                return None
+
+        p_values = np.array([runs_test_static(self.binaries[folds_bin[i]: folds_bin[i + 1]]) for i in range(self.no_folds_bin)])
         nans = np.isnan(p_values).sum()
-        p_values = p_values[~np.isnan(p_values)]
+        p_values_ = p_values[~np.isnan(p_values)]
 
-        prob_none = np.array([binom(n, i) for i in range(int(np.ceil(n / 2 + 2 * np.sqrt(n))))]).sum() / (2 ** n)
+        # prob_none = np.array([binom(n, i) for i in range(int(np.ceil(n / 2 + 2 * np.sqrt(n))))]).sum() / (2 ** n)
+        prob_none = (1 - stats.norm().cdf(2 ** 1.5)) * 2
 
-        y = np.flip(np.bincount((p_values.reshape(-1, 1) < (np.arange(k) / k)[np.newaxis, :]).sum(axis=1), minlength=k))
+        y = np.flip(np.bincount((p_values_.reshape(-1, 1) < (np.arange(k) / k)[np.newaxis, :]).sum(axis=1), minlength=k))
         t = (np.square(y - self.no_folds_bin / k * (1 - prob_none)) / (self.no_folds_bin / k * (1 - prob_none))).sum() + (nans - self.no_folds_bin * prob_none) ** 2 / (n * prob_none)
         p = 1 - stats.chi2(k).cdf(t)
-        return p, t, p < alpha
+        return p, t, p < alpha, p_values
 
     @staticmethod
     def _freq_monobit_stat(binaries: npt.NDArray[bool]) -> float():
@@ -161,14 +171,14 @@ class Tester(ABC):
         p = self._freq_monobit_pval(t)
         return p, t, p < alpha
 
-    def freq_monobit_2nd_level_test(self, k: int = 1000, alpha: float = 0.05) -> Tuple[Optional[float], Optional[float], bool]:
+    def freq_monobit_2nd_level_test(self, k: int = 1000, alpha: float = 0.05) -> Tuple[Optional[float], Optional[float], bool, npt.NDArray[float]]:
         n = 512
         self.no_folds_bin = self.binaries.shape[0] // n
         folds_bin = [n * i for i in range(self.no_folds_bin + 1)]
         p_values = np.array([self._freq_monobit_pval(self._freq_monobit_stat(self.binaries[folds_bin[i]: folds_bin[i + 1]])) for i in range(self.no_folds_bin)])
         t = self._chi2_stat(p_values)
         p = self._chi2_pval(k, t)
-        return p, t, p < alpha
+        return p, t, p < alpha, p_values
 
 
 if __name__ == "__main__":
